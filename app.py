@@ -137,20 +137,28 @@ def dl_batch(symbols, interval="1wk", batch_size=50, progress_bar=None):
 # HESAPLAMA
 # ══════════════════════════════════════════════════════════════
 def gorsel_hafiza(close_arr):
+    """
+    GXSMODUJ mantigi: sabit ATL ve ATH cizgileri.
+    Mum kac kez ATL bolgesinden ATH bolgesine gitmis?
+    ATL = en dusuk kapanis (sabit cizgi)
+    ATH = en yuksek kapanis (sabit cizgi)
+    Pozisyon = (close - ATL) / (ATH - ATL) * 100
+    """
     n = len(close_arr)
     if n < 20:
         return 0
-    cum_min = np.minimum.accumulate(close_arr)
-    cum_max = np.maximum.accumulate(close_arr)
-    rng = cum_max - cum_min
-    with np.errstate(divide="ignore", invalid="ignore"):
-        pos = np.where(rng > 0, (close_arr - cum_min) / rng * 100.0, 50.0)
+    atl = close_arr.min()  # sabit ATL cizgisi
+    ath = close_arr.max()  # sabit ATH cizgisi
+    rng = ath - atl
+    if rng <= 0:
+        return 0
+    pos = (close_arr - atl) / rng * 100.0
     bounces = 0
     in_dip = False
     for p in pos:
-        if p <= 20:
+        if p <= 20:    # ATL bolgesinde
             in_dip = True
-        elif p >= 80 and in_dip:
+        elif p >= 80 and in_dip:  # ATH bolgesine ulasti
             bounces += 1
             in_dip = False
     return bounces
