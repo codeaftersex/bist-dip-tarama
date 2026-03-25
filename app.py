@@ -102,7 +102,7 @@ def dl_indices(interval="1wk"):
     return idx_data
 
 
-def dl_stocks(symbols, interval="1wk", batch_size=30, progress_bar=None):
+def dl_stocks(symbols, interval="1wk", batch_size=10, progress_bar=None):
     from isyatirimhisse import fetch_stock_data
     result_tl = {}
     result_usd = {}
@@ -133,17 +133,24 @@ def dl_stocks(symbols, interval="1wk", batch_size=30, progress_bar=None):
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(fetch_batch, batch): batch for batch in batches}
-        for future in as_completed(futures):
-            batch_result = future.result()
-            for sym, data in batch_result.items():
-                result_tl[sym] = data["tl"]
-                result_usd[sym] = data["usd"]
-            done += len(futures[future])
-            if progress_bar:
-                progress_bar.progress(min(done / len(symbols), 1.0),
-                                      text=f"{done}/{len(symbols)} hisse (isyatirim)")
+    for batch in batches:
+        batch_result = fetch_batch(batch)
+        for sym, data in batch_result.items():
+            result_tl[sym] = data["tl"]
+            result_usd[sym] = data["usd"]
+        done += len(batch)
+        if progress_bar:
+            progress_bar.progress(min(done / len(symbols), 1.0),
+                                  text=f"{done}/{len(symbols)} hisse (isyatirim)")
+
+    # Kaybolan hisseleri tek tek dene
+    missing = [s for s in symbols if s not in result_tl]
+    if missing:
+        for sym in missing:
+            r = fetch_batch([sym])
+            if sym in r:
+                result_tl[sym] = r[sym]["tl"]
+                result_usd[sym] = r[sym]["usd"]
 
     return result_tl, result_usd
 
