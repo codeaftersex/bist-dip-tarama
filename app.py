@@ -10,10 +10,11 @@ from datetime import datetime
 st.set_page_config(page_title="BIST Dip Tarama", page_icon="📊", layout="wide")
 
 BIST_INDICES = [
-    "XU030", "XU050", "XU100",
-    "XBANK", "XGMYO", "XUSIN", "XGIDA", "XMANA", "XHOLD",
-    "XTEKS", "XKMYA", "XILTM", "XELKT", "XTCRT",
-    "XINSA", "XSPOR", "XTEKY", "XULAS", "XTRZM",
+    "XUTUM", "XTUMY", "XU030", "XU100", "XYLDZ", "XBANA", "XKOBI",
+    "XUSIN", "XGIDA", "XKMYA", "XMADN", "XMANA", "XMESY", "XKAGT",
+    "XTAST", "XTEKS", "XUHIZ", "XELKT", "XILTM", "XINSA", "XSPOR",
+    "XULAS", "XUMAL", "XBANK", "XSGRT", "XFINK", "XHOLD", "XGMYO",
+    "XAKUR", "XYORT", "XUTEK", "XBLSM",
 ]
 
 SECTOR_TO_INDEX = {
@@ -70,12 +71,13 @@ def fetch_stocks():
                         idx_name = proname.replace("BIST:", "")
                         if idx_name not in idx_list:
                             idx_list.append(idx_name)
-        if len(idx_list) <= 1:
+        bist_set = set(BIST_INDICES)
+        idx_list = [x for x in idx_list if x in bist_set]
+        if not idx_list:
             sec_idx = SECTOR_TO_INDEX.get(sector)
-            if sec_idx and sec_idx not in idx_list:
+            if sec_idx:
                 idx_list.append(sec_idx)
-            if "XU100" not in idx_list:
-                idx_list.append("XU100")
+            idx_list.append("XUTUM")
         stocks[sym] = {"sector": sector, "indices": idx_list}
     return stocks
 
@@ -290,7 +292,10 @@ def main():
                 if s is not None:
                     indices[name] = s
             if "XU100" in indices:
-                indices["XUTUM"] = indices["XU100"]
+                if "XUTUM" not in indices:
+                    indices["XUTUM"] = indices["XU100"]
+                if "XTUMY" not in indices:
+                    indices["XTUMY"] = indices["XU100"]
             st.write(f"✅ {len(indices)} endeks alindi")
 
             st.write("📊 Hisse verileri indiriliyor...")
