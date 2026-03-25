@@ -195,9 +195,12 @@ def run_scan(stock_data, stocks_info, usdtry, indices, threshold):
             sector = info.get("sector", "")
             stock_indices = info.get("indices", ["XUTUM"])
 
-            tl = calc_dim(close)
-            if tl is None:
+            # Negatif/sifir kapanis verilerini temizle (Yahoo bozuk veri)
+            close = close[close > 0]
+            if len(close) < 10:
                 continue
+
+            tl = calc_dim(close)
 
             ua = usdtry.reindex(close.index, method="ffill")
             usd = calc_dim(close / ua)
