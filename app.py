@@ -6,6 +6,7 @@ import requests
 import yfinance as yf
 import time, json, os
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(page_title="BIST Dip Tarama", page_icon="📊", layout="wide")
 
@@ -39,7 +40,7 @@ SECTOR_TO_INDEX = {
 
 
 # ══════════════════════════════════════════════════════════════
-# DATA FUNCTIONS
+# DATA
 # ══════════════════════════════════════════════════════════════
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_stocks():
@@ -57,11 +58,12 @@ def fetch_stocks():
                          timeout=20)
     resp.raise_for_status()
     stocks = {}
+    bist_set = set(BIST_INDICES)
     for item in resp.json()["data"]:
         sym = item["s"].replace("BIST:", "")
         vals = item["d"]
         sector = vals[1] if len(vals) > 1 and vals[1] else "Unknown"
-        idx_list = ["XUTUM"]
+        idx_list = []
         raw_indexes = vals[2] if len(vals) > 2 and vals[2] else []
         if isinstance(raw_indexes, list):
             for idx_info in raw_indexes:
@@ -69,10 +71,8 @@ def fetch_stocks():
                     proname = idx_info["proname"]
                     if proname.startswith("BIST:"):
                         idx_name = proname.replace("BIST:", "")
-                        if idx_name not in idx_list:
+                        if idx_name in bist_set and idx_name not in idx_list:
                             idx_list.append(idx_name)
-        bist_set = set(BIST_INDICES)
-        idx_list = [x for x in idx_list if x in bist_set]
         if not idx_list:
             sec_idx = SECTOR_TO_INDEX.get(sector)
             if sec_idx:
@@ -82,61 +82,13 @@ def fetch_stocks():
     return stocks
 
 
-def dl_single(ticker, interval="1wk"):
-    try:
-        d = yf.download(ticker, period="max", interval=interval, progress=False, auto_adjust=True)
-        if d.empty:
-            return None
-        s = d["Close"].dropna()
-        if isinstance(s, pd.DataFrame):
-            s = s.iloc[:, 0]
-        return s if len(s) > 0 else None
-    except Exception:
-        return None
-
-
-def dl_batch(symbols, interval="1wk", batch_size=50, progress_bar=None):
-    result = {}
-    batches = [symbols[i:i+batch_size] for i in range(0, len(symbols), batch_size)]
-    done = 0
-    for batch in batches:
-        tickers = [f"{s}.IS" for s in batch]
-        try:
-            data = yf.download(" ".join(tickers), period="max", interval=interval,
-                               group_by="ticker", threads=True, progress=False, auto_adjust=True)
-            if data is not None:
-                for s in batch:
-                    t = f"{s}.IS"
-                    try:
-                        if len(batch) == 1:
-                            c = data["Close"].dropna()
-                        else:
-                            if t not in data.columns.get_level_values(0):
-                                continue
-                            c = data[t]["Close"].dropna()
-                        if isinstance(c, pd.DataFrame):
-                            c = c.iloc[:, 0]
-                        if len(c) > 0:
-                            result[s] = c
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        done += len(batch)
-        if progress_bar:
-            progress_bar.progress(min(done / len(symbols), 1.0), text=f"{done}/{len(symbols)} hisse")
-        time.sleep(0.3)
-    return result
-
-
 def dl_indices(interval="1wk"):
-    """Is Yatirim'dan tum BIST endeks verilerini indir"""
     from isyatirimhisse import fetch_index_data
     idx_data = {}
+    end_date = datetime.now().strftime("%d-%m-%Y")
     for name in BIST_INDICES:
         try:
-            df = fetch_index_data(indices=name, start_date="01-01-2010",
-                                  end_date=datetime.now().strftime("%d-%m-%Y"))
+            df = fetch_index_data(indices=name, start_date="01-01-2010", end_date=end_date)
             if df is not None and len(df) > 50:
                 s = df.set_index("DATE")["VALUE"].astype(float)
                 s.index = pd.to_datetime(s.index)
@@ -148,6 +100,52 @@ def dl_indices(interval="1wk"):
         except Exception:
             pass
     return idx_data
+
+
+def dl_stocks(symbols, interval="1wk", batch_size=30, progress_bar=None):
+    from isyatirimhisse import fetch_stock_data
+    result_tl = {}
+    result_usd = {}
+    batches = [symbols[i:i+batch_size] for i in range(0, len(symbols), batch_size)]
+    end_date = datetime.now().strftime("%d-%m-%Y")
+    done = 0
+
+    def fetch_batch(batch):
+        try:
+            df = fetch_stock_data(symbols=batch, start_date="01-01-2005", end_date=end_date)
+            if df is None or len(df) == 0:
+                return {}
+            out = {}
+            for sym, grp in df.groupby("HGDG_HS_KODU"):
+                grp = grp.sort_values("HGDG_TARIH")
+                grp["HGDG_TARIH"] = pd.to_datetime(grp["HGDG_TARIH"])
+                tl = grp.set_index("HGDG_TARIH")["HGDG_KAPANIS"].astype(float)
+                usd = grp.set_index("HGDG_TARIH")["DOLAR_BAZLI_FIYAT"].astype(float)
+                if interval == "1wk":
+                    tl = tl.resample("W-FRI").last().dropna()
+                    usd = usd.resample("W-FRI").last().dropna()
+                elif interval == "1mo":
+                    tl = tl.resample("ME").last().dropna()
+                    usd = usd.resample("ME").last().dropna()
+                if len(tl) > 10:
+                    out[sym] = {"tl": tl, "usd": usd}
+            return out
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(fetch_batch, batch): batch for batch in batches}
+        for future in as_completed(futures):
+            batch_result = future.result()
+            for sym, data in batch_result.items():
+                result_tl[sym] = data["tl"]
+                result_usd[sym] = data["usd"]
+            done += len(futures[future])
+            if progress_bar:
+                progress_bar.progress(min(done / len(symbols), 1.0),
+                                      text=f"{done}/{len(symbols)} hisse (isyatirim)")
+
+    return result_tl, result_usd
 
 
 def gorsel_hafiza(close_arr):
@@ -187,23 +185,23 @@ def calc_dim(series):
             "ath_pot": (ath - cur) / cur * 100.0}
 
 
-def run_scan(stock_data, stocks_info, usdtry, indices, threshold):
+def run_scan(stock_tl, stock_usd, stocks_info, indices, threshold):
     results = []
-    for sym, close in stock_data.items():
+    for sym, close in stock_tl.items():
         try:
             info = stocks_info.get(sym, {})
             sector = info.get("sector", "")
             stock_indices = info.get("indices", ["XUTUM"])
 
-            # Negatif/sifir kapanis verilerini temizle (Yahoo bozuk veri)
             close = close[close > 0]
             if len(close) < 10:
                 continue
 
             tl = calc_dim(close)
-
-            ua = usdtry.reindex(close.index, method="ffill")
-            usd = calc_dim(close / ua)
+            usd_close = stock_usd.get(sym)
+            if usd_close is not None:
+                usd_close = usd_close[usd_close > 0]
+            usd = calc_dim(usd_close)
 
             idx_results = []
             for idx_name in stock_indices:
@@ -230,7 +228,8 @@ def run_scan(stock_data, stocks_info, usdtry, indices, threshold):
                 continue
 
             gh = gorsel_hafiza(close.values)
-            idx_parts = [f"{ir['name']}:%{ir['atl_pct']:.1f}" for ir in sorted(idx_results, key=lambda x: abs(x["atl_pct"]))]
+            idx_parts = [f"{ir['name']}:%{ir['atl_pct']:.1f}"
+                         for ir in sorted(idx_results, key=lambda x: abs(x["atl_pct"]))]
 
             results.append({
                 "Hisse": sym,
@@ -240,11 +239,11 @@ def run_scan(stock_data, stocks_info, usdtry, indices, threshold):
                 "atl_fark": round(abs(best[2]), 2),
                 "ath_pot": round(best[3], 1),
                 "gh": gh,
-                "TL Fiyat": round(tl["cur"], 2),
-                "TL ATL": round(tl["atl"], 2),
-                "TL ATH": round(tl["ath"], 2),
-                "tl_atl_fark": round(tl["atl_pct"], 2),
-                "tl_ath_pot": round(tl["ath_pot"], 1),
+                "TL Fiyat": round(tl["cur"], 2) if tl else None,
+                "TL ATL": round(tl["atl"], 2) if tl else None,
+                "TL ATH": round(tl["ath"], 2) if tl else None,
+                "tl_atl_fark": round(tl["atl_pct"], 2) if tl else None,
+                "tl_ath_pot": round(tl["ath_pot"], 1) if tl else None,
                 "USD Fiyat": round(usd["cur"], 4) if usd else None,
                 "USD ATL": round(usd["atl"], 4) if usd else None,
                 "usd_atl_fark": round(usd["atl_pct"], 2) if usd else None,
@@ -257,7 +256,7 @@ def run_scan(stock_data, stocks_info, usdtry, indices, threshold):
 
 
 # ══════════════════════════════════════════════════════════════
-# GENERATE HTML
+# HTML
 # ══════════════════════════════════════════════════════════════
 def generate_html(records, indices_list, meta):
     template_path = os.path.join(os.path.dirname(__file__), "template.html")
@@ -265,7 +264,6 @@ def generate_html(records, indices_list, meta):
         return None
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
-
     clean = []
     for r in records:
         row = {}
@@ -275,7 +273,6 @@ def generate_html(records, indices_list, meta):
             else:
                 row[k] = v
         clean.append(row)
-
     html = html.replace("__DATA__", json.dumps(clean, ensure_ascii=False))
     html = html.replace("__INDICES__", json.dumps(indices_list, ensure_ascii=False))
     html = html.replace("__META__", json.dumps(meta, ensure_ascii=False))
@@ -283,11 +280,11 @@ def generate_html(records, indices_list, meta):
 
 
 # ══════════════════════════════════════════════════════════════
-# STREAMLIT UI
+# UI
 # ══════════════════════════════════════════════════════════════
 def main():
     st.markdown("# 📊 BIST Dip Tarama")
-    st.markdown("**Haftalik periyotta TL, USD ve Endeks bazli ATL taramasi**")
+    st.markdown("**isyatirim.com.tr verileri | 32 endeks | Haftalik periyot**")
 
     with st.sidebar:
         st.header("Ayarlar")
@@ -297,38 +294,33 @@ def main():
 
     if st.button("🚀 Taramayi Baslat", type="primary", use_container_width=True):
         with st.status("Tarama baslatiliyor...", expanded=True) as status:
-            st.write("📋 Hisse listesi aliniyor...")
+            st.write("📋 Hisse listesi aliniyor (TradingView)...")
             stocks = fetch_stocks()
             st.write(f"✅ {len(stocks)} hisse bulundu")
 
-            st.write("💱 USDTRY indiriliyor...")
-            usdtry = dl_single("USDTRY=X", interval)
-            if usdtry is None:
-                st.error("USDTRY alinamadi!")
-                return
-            usdtry_rate = float(usdtry.iloc[-1])
-            st.write(f"✅ USDTRY: {usdtry_rate:.2f}")
-
-            st.write("📈 Endeks verileri indiriliyor (isyatirim.com.tr)...")
+            st.write(f"📈 {len(BIST_INDICES)} endeks indiriliyor (isyatirim)...")
             indices = dl_indices(interval)
             st.write(f"✅ {len(indices)}/{len(BIST_INDICES)} endeks alindi")
 
-            st.write("📊 Hisse verileri indiriliyor...")
+            st.write("📊 Hisse verileri indiriliyor (isyatirim)...")
             progress = st.progress(0, text="Basliyor...")
-            stock_data = dl_batch(list(stocks.keys()), interval, 50, progress)
+            stock_tl, stock_usd = dl_stocks(list(stocks.keys()), interval, 30, progress)
             progress.empty()
-            st.write(f"✅ {len(stock_data)} hisse verisi alindi")
+            st.write(f"✅ {len(stock_tl)} hisse verisi alindi")
 
             st.write("🔢 Hesaplaniyor...")
-            records = run_scan(stock_data, stocks, usdtry, indices, threshold)
+            records = run_scan(stock_tl, stock_usd, stocks, indices, threshold)
             st.write(f"✅ {len(records)} hisse bulundu")
 
-            status.update(label=f"Tarama tamamlandi! {len(records)} hisse", state="complete")
+            status.update(label=f"Tamamlandi! {len(records)} hisse", state="complete")
+
+        usdtry_s = yf.download("USDTRY=X", period="5d", progress=False, auto_adjust=True)
+        usdtry_rate = float(usdtry_s["Close"].dropna().iloc[-1]) if not usdtry_s.empty else 0
 
         meta = {
             "usdtry": usdtry_rate,
             "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "total_scanned": len(stock_data),
+            "total_scanned": len(stock_tl),
             "threshold": threshold,
         }
 
@@ -336,8 +328,6 @@ def main():
         if html:
             st.session_state["html"] = html
             st.session_state["records"] = records
-        else:
-            st.error("template.html bulunamadi!")
 
     if "html" in st.session_state:
         components.html(st.session_state["html"], height=900, scrolling=True)
@@ -345,7 +335,7 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
-                "📥 HTML Indir (tek dosya dashboard)",
+                "📥 HTML Dashboard Indir",
                 data=st.session_state["html"],
                 file_name=f"bist_dip_tarama_{datetime.now().strftime('%Y%m%d')}.html",
                 mime="text/html",
