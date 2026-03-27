@@ -369,6 +369,8 @@ td.mono{font-family:var(--font-data)}
 const RAW = __DATA__;
 const INDICES = __INDICES__;
 const META = __META__;
+/* Tum hisselerin temel verileri (taramada cikmayan dahil) - sektor ortalamasi icin */
+const ALL_STOCKS = __ALLSTOCKS__;
 
 /* ============================================================
    STATE
@@ -671,12 +673,16 @@ function updateSectorCard(filteredData) {
     return;
   }
   card.style.display = 'block';
-  const stocks = RAW.filter(s => s._dahilSet && s._dahilSet.has(activeTab));
+  /* ALL_STOCKS: tum hisseler (taramada cikmayan dahil) */
+  const allInIndex = ALL_STOCKS.filter(s => {
+    const dahil = (s.indices || '').split(',').map(x => x.trim());
+    return dahil.includes(activeTab);
+  });
   document.getElementById('scName').textContent = INDEX_NAMES[activeTab] || activeTab;
-  document.getElementById('scCount').textContent = stocks.length;
-  const fks = stocks.map(s => s['F/K']).filter(v => v != null && v > 0 && v < 500);
-  const pdds = stocks.map(s => s['PD/DD']).filter(v => v != null && v > 0);
-  const roes = stocks.map(s => s['ROE %']).filter(v => v != null);
+  document.getElementById('scCount').textContent = allInIndex.length;
+  const fks = allInIndex.map(s => s.fk).filter(v => v != null && v > 0 && v < 500);
+  const pdds = allInIndex.map(s => s.pdd).filter(v => v != null && v > 0);
+  const roes = allInIndex.map(s => s.roe).filter(v => v != null);
   const avg = arr => arr.length > 0 ? (arr.reduce((a,b) => a+b, 0) / arr.length) : null;
   const fkAvg = avg(fks);
   const pddAvg = avg(pdds);

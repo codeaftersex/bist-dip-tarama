@@ -177,7 +177,7 @@ def run_scan(stock_data, stocks_info, usdtry, indices, threshold):
     return results
 
 
-def generate_html(records, indices_list, meta):
+def generate_html(records, indices_list, meta, all_stocks_info):
     tpl = os.path.join(os.path.dirname(__file__), "template.html")
     if not os.path.exists(tpl): return None
     with open(tpl, "r", encoding="utf-8") as f: html = f.read()
@@ -187,9 +187,14 @@ def generate_html(records, indices_list, meta):
         for k, v in r.items():
             row[k] = None if isinstance(v, float) and (np.isnan(v) or np.isinf(v)) else v
         clean.append(row)
+    all_basic = [{"sym": s, "indices": ", ".join(info.get("indices",[])),
+                  "fk": info.get("fk"), "pdd": info.get("pdd"),
+                  "roe": info.get("roe"), "fdo": info.get("fdo")}
+                 for s, info in all_stocks_info.items()]
     html = html.replace("__DATA__", json.dumps(clean, ensure_ascii=False))
     html = html.replace("__INDICES__", json.dumps(indices_list, ensure_ascii=False))
     html = html.replace("__META__", json.dumps(meta, ensure_ascii=False))
+    html = html.replace("__ALLSTOCKS__", json.dumps(all_basic, ensure_ascii=False))
     return html
 
 
@@ -279,7 +284,7 @@ def main():
 
         meta = {"usdtry": float(usdtry.iloc[-1]), "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "total_scanned": len(stock_data), "threshold": threshold, "period": period}
-        html = generate_html(records, list(indices.keys()), meta)
+        html = generate_html(records, list(indices.keys()), meta, stocks)
         if html:
             st.session_state["html"] = html
             st.session_state["records"] = records
