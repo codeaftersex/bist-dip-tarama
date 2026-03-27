@@ -235,6 +235,35 @@ td.mono{font-family:var(--font-data)}
     <div class="tabs-row" id="tabsRow"></div>
   </nav>
 
+  <!-- SEKTOR BILGI KARTI -->
+  <div id="sectorCard" style="display:none;background:var(--surface);border:1px solid var(--border);padding:16px 20px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span style="font-family:var(--font-heading);font-size:1rem;font-weight:700;color:var(--text)">Sektör Bilgisi</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:24px">
+      <div>
+        <div style="font-size:0.7rem;color:var(--text-muted)">Sektör</div>
+        <div id="scName" style="font-family:var(--font-heading);font-size:0.85rem;font-weight:700;color:var(--text);margin-top:2px"></div>
+      </div>
+      <div>
+        <div style="font-size:0.7rem;color:var(--text-muted)">Şirket Sayısı</div>
+        <div id="scCount" style="font-family:var(--font-heading);font-size:1.1rem;font-weight:800;color:var(--green);margin-top:2px"></div>
+      </div>
+      <div>
+        <div style="font-size:0.7rem;color:var(--text-muted)">F/K (Sektör Ort.)</div>
+        <div id="scFK" style="font-family:var(--font-heading);font-size:1.1rem;font-weight:800;color:var(--text);margin-top:2px"></div>
+      </div>
+      <div>
+        <div style="font-size:0.7rem;color:var(--text-muted)">PD/DD (Sektör Ort.)</div>
+        <div id="scPDD" style="font-family:var(--font-heading);font-size:1.1rem;font-weight:800;color:var(--text);margin-top:2px"></div>
+      </div>
+      <div>
+        <div style="font-size:0.7rem;color:var(--text-muted)">ROE% (Sektör Ort.)</div>
+        <div id="scROE" style="font-family:var(--font-heading);font-size:1.1rem;font-weight:800;color:var(--green);margin-top:2px"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- CONTROLS -->
   <div class="controls-bar">
     <div class="control-group">
@@ -622,8 +651,44 @@ function getFilteredData() {
 /* ============================================================
    RENDER
    ============================================================ */
+const INDEX_NAMES = {
+  'XUTUM':'TÜM HİSSELER','XTUMY':'TÜM HİSSELER (100)','XU030':'BIST 30','XU100':'BIST 100',
+  'XYLDZ':'YILDIZ PAZAR','XBANA':'ANA PAZAR','XKOBI':'KOBİ SANAYİ',
+  'XUSIN':'SANAYİ','XGIDA':'GIDA İÇECEK','XKMYA':'KİMYA PETROL PLASTİK',
+  'XMADN':'MADENCİLİK','XMANA':'METAL ANA','XMESY':'METAL EŞYA MAKİNA',
+  'XKAGT':'ORMAN KAĞIT BASIM','XTAST':'TAŞ TOPRAK','XTEKS':'TEKSTİL DERİ',
+  'XUHIZ':'HİZMETLER','XELKT':'ELEKTRİK','XILTM':'İLETİŞİM','XINSA':'İNŞAAT',
+  'XSPOR':'SPOR','XULAS':'ULAŞTIRMA','XUMAL':'MALİ','XBANK':'BANKA',
+  'XSGRT':'SİGORTA','XFINK':'FİNANSAL KİRALAMA','XHOLD':'HOLDİNG',
+  'XGMYO':'GAYRİMENKUL YATIRIM ORTAKLIKLARI','XAKUR':'KURUMSAL YÖNETİM',
+  'XYORT':'YATIRIM ORTAKLIKLARI','XUTEK':'TEKNOLOJİ','XBLSM':'BİLİŞİM',
+};
+
+function updateSectorCard(filteredData) {
+  const card = document.getElementById('sectorCard');
+  if (activeTab === 'TUMU' || activeTab === 'TL' || activeTab === 'USD' || activeTab === 'IZLEME') {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  const stocks = RAW.filter(s => s._dahilSet && s._dahilSet.has(activeTab));
+  document.getElementById('scName').textContent = INDEX_NAMES[activeTab] || activeTab;
+  document.getElementById('scCount').textContent = stocks.length;
+  const fks = stocks.map(s => s['F/K']).filter(v => v != null && v > 0 && v < 500);
+  const pdds = stocks.map(s => s['PD/DD']).filter(v => v != null && v > 0);
+  const roes = stocks.map(s => s['ROE %']).filter(v => v != null);
+  const avg = arr => arr.length > 0 ? (arr.reduce((a,b) => a+b, 0) / arr.length) : null;
+  const fkAvg = avg(fks);
+  const pddAvg = avg(pdds);
+  const roeAvg = avg(roes);
+  document.getElementById('scFK').textContent = fkAvg != null ? fkAvg.toFixed(2).replace('.',',') : '-';
+  document.getElementById('scPDD').textContent = pddAvg != null ? pddAvg.toFixed(2).replace('.',',') : '-';
+  document.getElementById('scROE').textContent = roeAvg != null ? '%' + roeAvg.toFixed(2).replace('.',',') : '-';
+}
+
 function render() {
   const data = getFilteredData();
+  updateSectorCard(data);
   const tbody = document.getElementById('tableBody');
   const emptyEl = document.getElementById('emptyState');
 
