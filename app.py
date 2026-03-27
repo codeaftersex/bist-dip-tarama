@@ -217,6 +217,14 @@ def main():
             stocks = fetch_stocks()
             st.write(f"{len(stocks)} hisse bulundu")
 
+            st.write("KAP'tan fiili dolasim oranlari aliniyor...")
+            from kap_fdo import fetch_kap_fdo
+            kap_fdo = fetch_kap_fdo()
+            for sym in stocks:
+                if sym in kap_fdo:
+                    stocks[sym]["fdo"] = kap_fdo[sym]
+            st.write(f"{len(kap_fdo)} hisse FDO verisi (KAP)")
+
             st.write("TradingView'e baglaniliyor...")
             tv = TvDatafeed()
 

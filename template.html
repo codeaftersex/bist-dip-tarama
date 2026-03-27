@@ -258,6 +258,19 @@ td.mono{font-family:var(--font-data)}
       </select>
     </div>
     <div class="control-group">
+      <label class="control-label" for="fkMin">F/K Aralık</label>
+      <input type="number" id="fkMin" placeholder="Min" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font-data);font-size:0.7rem;padding:4px">
+      <input type="number" id="fkMax" placeholder="Max" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font-data);font-size:0.7rem;padding:4px">
+    </div>
+    <div class="control-group">
+      <label class="control-label" for="roeMin">ROE% Min</label>
+      <input type="number" id="roeMin" placeholder="Min" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font-data);font-size:0.7rem;padding:4px">
+    </div>
+    <div class="control-group">
+      <label class="control-label" for="pddMax">PD/DD Max</label>
+      <input type="number" id="pddMax" placeholder="Max" step="0.1" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font-data);font-size:0.7rem;padding:4px">
+    </div>
+    <div class="control-group">
       <label class="control-label" for="sortSelect">Sırala</label>
       <select id="sortSelect">
         <option value="atl_fark_asc">ATL Fark% (Artan)</option>
@@ -515,6 +528,16 @@ function getFilteredData() {
     const vals = getStockValues(s);
     return vals.atl_fark != null && vals.atl_fark <= maxAtlPct;
   });
+
+  /* Temel veri filtreleri */
+  const fkMinV = parseFloat(document.getElementById('fkMin').value);
+  const fkMaxV = parseFloat(document.getElementById('fkMax').value);
+  const roeMinV = parseFloat(document.getElementById('roeMin').value);
+  const pddMaxV = parseFloat(document.getElementById('pddMax').value);
+  if (!isNaN(fkMinV)) data = data.filter(s => s['F/K'] != null && s['F/K'] >= fkMinV);
+  if (!isNaN(fkMaxV)) data = data.filter(s => s['F/K'] != null && s['F/K'] <= fkMaxV);
+  if (!isNaN(roeMinV)) data = data.filter(s => s['ROE %'] != null && s['ROE %'] >= roeMinV);
+  if (!isNaN(pddMaxV)) data = data.filter(s => s['PD/DD'] != null && s['PD/DD'] <= pddMaxV);
 
   /* Min GH */
   if (minGh > 0) {
@@ -784,6 +807,11 @@ document.getElementById('ghFilter').addEventListener('change', function() {
   render();
 });
 
+/* Temel veri filtreleri */
+['fkMin','fkMax','roeMin','pddMax'].forEach(id => {
+  document.getElementById(id).addEventListener('input', function() { render(); });
+});
+
 /* Sort select */
 document.getElementById('sortSelect').addEventListener('change', function() {
   const val = this.value;
@@ -811,6 +839,10 @@ document.getElementById('resetBtn').addEventListener('click', function() {
   atlSliderVal.textContent = '100%';
   document.getElementById('ghFilter').value = '0';
   document.getElementById('sortSelect').value = 'atl_fark_asc';
+  document.getElementById('fkMin').value = '';
+  document.getElementById('fkMax').value = '';
+  document.getElementById('roeMin').value = '';
+  document.getElementById('pddMax').value = '';
   updateHeaderSortUI();
   render();
 });
